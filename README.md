@@ -1,6 +1,6 @@
-ParseTesting
+WearItBetter
 ============
 
-ParseTesting
+Can YOU wear it better?
 
-Work in progress
+I bet you can't, bro
