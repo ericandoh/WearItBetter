@@ -119,16 +119,4 @@ class InAppNotification {
         var obj: PFObject = self.personalObj!["ImagePost"] as PFObject
         return obj;
     }
-    
-    func acceptFriend() {
-        //for accept notification objects
-        if (type != NotificationType.FRIEND_REQUEST.toRaw()) {
-            //Post should be a Friend Request Notification
-            NSLog("Cannot accept friend from a non-friend request notification!")
-        }
-        self.friendName = self.personalObj!["sender"] as String;
-        ServerInteractor.addAsFriend(self.friendName)
-        ServerInteractor.postFriendAccept(self.friendName)
-        self.personalObj!.deleteInBackground()
-    }
 }

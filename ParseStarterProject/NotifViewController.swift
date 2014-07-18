@@ -106,8 +106,8 @@ class NotifViewController: UITableViewController {
             destination.receiveNotifObject(notifObj);
         }
         else if (id == "FriendRequestSegue") {
-            var destination = segue!.destinationViewController as FriendRequestViewController;
-            destination.receiveNotifObject(notifObj);
+            //var destination = segue!.destinationViewController as FriendRequestViewController;
+            //destination.receiveNotifObject(notifObj);
         }
         else {
             var destination = segue!.destinationViewController as SingleNotifViewController;

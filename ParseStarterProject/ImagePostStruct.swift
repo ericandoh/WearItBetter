@@ -22,7 +22,7 @@ class ImagePostStructure
         myObj = inputObj;
         imageLoaded = false;
     }
-    init(image: UIImage, exclusivity: PostExclusivity, labels: String) {
+    init(image: UIImage, labels: String) {
         //called when making a new post
         //myObj must be saved by caller
         self.image = image;
@@ -34,7 +34,6 @@ class ImagePostStructure
         myObj["author"] = PFUser.currentUser().username;
         myObj["likes"] = 0;
         myObj["passes"] = 0;
-        myObj["exclusive"] = exclusivity.toRaw();
         myObj["comments"] = [];
         
         

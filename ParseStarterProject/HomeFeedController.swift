@@ -15,20 +15,20 @@ class HomeFeedController: UIViewController, UITableViewDelegate, UITableViewData
     @IBOutlet var commentView: UIView               //use this for hiding and showing
     @IBOutlet var commentTableView: UITableView     //use this for specific table manipulations
     @IBOutlet var voteCounter: UILabel;
-    @IBOutlet var typeFeed: UISegmentedControl
     
     var swiperNoSwipe: Bool = false;
     @IBOutlet var frontImageView: UIImageView
     @IBOutlet var backImageView: UIImageView
     
-    
+    @IBOutlet var frontLabel: UIButton
+    @IBOutlet var backLabel: UIButton
     //which image we are viewing currently in firstSet
     var viewCounter = 0;
     
     //first set has images to display, viewCounter tells me where in array I am currently viewing
-    var firstSet: Array<ImagePostStructure?> = Array<ImagePostStructure?>();
+    var firstSet: Array<PairPostStructure?> = Array<PairPostStructure?>();
     //second set should be loaded while viewing first set (load in background), switch to this when we run out in firstSet
-    var secondSet: Array<ImagePostStructure?> = Array<ImagePostStructure?>();
+    var secondSet: Array<PairPostStructure?> = Array<PairPostStructure?>();
     
     //tells me how much of my set is loaded
     var loadedSet: Array<Bool> = Array<Bool>();
@@ -40,20 +40,25 @@ class HomeFeedController: UIViewController, UITableViewDelegate, UITableViewData
     //an array of comments which will be populated when loading app
     var commentList: Array<PostComment> = [];
     
+    //am i looking at results or images
+    var showingImg: Bool = true;
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         // Do any additional setup after loading the view.
         
         
-        self.view.bringSubviewToFront(frontImageView);
+        //self.view.bringSubviewToFront(frontImageView);
         
         commentView.hidden = true; //this should be set in storyboard but just in case
+        frontLabel.setTitle("", forState: UIControlState.Normal);
+        backLabel.setTitle("", forState: UIControlState.Normal);
     }
     override func viewDidAppear(animated: Bool) {
-        frontImageView!.image = LOADING_IMG;
         resetToStart();
     }
     func resetToStart() {
+        frontImageView!.image = LOADING_IMG;
         backImageView!.image = LOADING_IMG;
         
         viewCounter = 0;    //we are at start of image sequence
@@ -62,23 +67,15 @@ class HomeFeedController: UIViewController, UITableViewDelegate, UITableViewData
     }
     func getPostCall() {
         loadedCount = 0;
-        var selected = typeFeed.selectedSegmentIndex;
-        var otherExcludes: Array<ImagePostStructure?>?
+        var otherExcludes: Array<PairPostStructure?>?
         if (loadedSetNum == 1) {
-            otherExcludes = Array<ImagePostStructure?>();
+            otherExcludes = Array<PairPostStructure?>();
         }
         else {
             //do not include posts which we already loaded into our first set
             otherExcludes = firstSet;
         }
-        if (selected == 0) {
-            //selected news feed => friends only => true
-            ServerInteractor.getPost(true, finishFunction: getReturnList, sender: self, excludes: otherExcludes!);
-        }
-        else {
-            //selected everyone
-            ServerInteractor.getPost(false, finishFunction: getReturnList, sender: self, excludes: otherExcludes!);
-        }
+        ServerInteractor.getPost(getReturnList, sender: self, excludes: otherExcludes!);
     }
     func setPostArraySize(size: Int) {
         //called by server to set size of array of images we are fetching, before retrieving
@@ -87,39 +84,26 @@ class HomeFeedController: UIViewController, UITableViewDelegate, UITableViewData
             if (loadedSetNum == 1) {
                 //this is our first set, and we have no images to display
                 frontImageView!.image = ENDING_IMG;
-                backImageView!.image = LOADING_IMG;
+                backImageView!.image = ENDING_IMG;
             }
-            else {
-                //do nothing, just make sure to set backImg to ENDING_IMG when firstSet ends
-                if (viewCounter == self.firstSet.count - 1) {
-                    //first set has only one image, back set needs an image but has none
-                    backImageView!.image = ENDING_IMG;
-                }
-            }
-        }
-        else {
         }
         if (loadedSetNum == 1) {
-            firstSet = Array<ImagePostStructure?>(count: size, repeatedValue: nil);
+            firstSet = Array<PairPostStructure?>(count: size, repeatedValue: nil);
         }
         else {
-            secondSet = Array<ImagePostStructure?>(count: size, repeatedValue: nil);
+            secondSet = Array<PairPostStructure?>(count: size, repeatedValue: nil);
         }
-        
         loadedSet = Array<Bool>(count: size, repeatedValue: false); //none of values loaded yet
     }
     
-    func getReturnList(imgStruct: ImagePostStructure, index: Int){
+    func getReturnList(imgStruct: PairPostStructure, index: Int){
         if (loadedSetNum == 1) {
             firstSet[index] = imgStruct;
             loadedSet[index] = true;
             if (index == viewCounter) {
                 //my first image needs to be loaded ASAP, it is first image that needs to be shown
-                frontImageView!.image = firstSet[viewCounter]!.image;   //this changes it from the loading scene
-            }
-            else if (index == viewCounter + 1) {
-                //my back image needs to be loaded
-                backImageView!.image = firstSet[viewCounter + 1]!.image;
+                frontImageView!.image = firstSet[viewCounter]!.img1;   //this changes it from the loading scene
+                backImageView!.image = firstSet[viewCounter]!.img2;   //this changes it from the loading scene
             }
             loadedCount++;
             if (loadedCount == firstSet.count) {
@@ -131,11 +115,6 @@ class HomeFeedController: UIViewController, UITableViewDelegate, UITableViewData
         else {
             secondSet[index] = imgStruct;
             loadedSet[index] = true;
-            //no need to check if I need this image right now; first set is the one buffering
-            if (index == 0 && viewCounter == firstSet.count - 1) {
-                //my VC is at the last img in firstSet; and backImg is not loaded
-                backImageView!.image = secondSet[0]!.image;
-            }
             loadedCount++;
         }
     }
@@ -145,24 +124,102 @@ class HomeFeedController: UIViewController, UITableViewDelegate, UITableViewData
         // Dispose of any resources that can be recreated.
     }
 
-    @IBAction func switchedFeed(sender: UISegmentedControl) {
-        frontImageView!.image = LOADING_IMG;
-        resetToStart();
-    }
     @IBAction func swipeLeft(sender: UISwipeGestureRecognizer) {
-        
+        /*
         var location: CGPoint = sender.locationInView(self.view);
         location.x -= 220;
         
-        animateImageMotion(location, vote: false);
+        animateImageMotion(location, vote: false);*/
     }
     @IBAction func swipeRight(sender: UISwipeGestureRecognizer) {
         
-        var location: CGPoint = sender.locationInView(self.view);
+        /*var location: CGPoint = sender.locationInView(self.view);
         location.x += 220;
         
-        animateImageMotion(location, vote: true);
+        animateImageMotion(location, vote: true);*/
     }
+    //insert methods here for clickign left or right
+    func clickImg(choice: Bool) {
+        NSLog("Clicked on image")
+        if (loadedSetNum == 1 && (firstSet.count == 0 || frontImageView!.image == ENDING_IMG)) {
+            resetToStart();
+            return;
+        }
+        if (loadedSetNum == 1 && (!loadedSet[viewCounter])) {
+            return;
+        }
+        if (frontImageView!.image == LOADING_IMG) {
+            return;
+        }
+        
+        firstSet[viewCounter]!.vote(choice);
+        
+        frontLabel.setTitle("+\(firstSet[viewCounter]!.getPost1Like())", forState: UIControlState.Normal);
+        backLabel.setTitle("+\(firstSet[viewCounter]!.getPost2Like())", forState: UIControlState.Normal);
+        
+        NSLog( "+\(firstSet[viewCounter]!.getPost1Like())");
+        NSLog( "+\(firstSet[viewCounter]!.getPost2Like())");
+        showingImg = false;
+        
+        //set stuff to show stats
+        
+        frontImageView.hidden = true;
+        backImageView.hidden = true;
+    }
+    @IBAction func frontConfirm(sender: AnyObject) {
+        if (showingImg) {
+            clickImg(true);
+        }
+        else {
+            clickReload();
+        }
+    }
+    @IBAction func backConfirm(sender: AnyObject) {
+        if (showingImg) {
+            clickImg(false);
+        }
+        else {
+            clickReload();
+        }
+    }
+    
+    func clickReload() {
+        NSLog("Reloading")
+        viewCounter++;
+
+        if (viewCounter == self.firstSet.count) {
+            //loadedSetNum == 2
+            viewCounter = 0;
+            if (secondSet.count == 0) {
+                resetToStart();
+            }
+            else if (secondSet.count != loadedCount) {
+                loadedSetNum = 1;
+                firstSet = secondSet;
+                secondSet = [];
+                frontImageView!.image = LOADING_IMG;   //this changes it from the loading scene
+                backImageView!.image = LOADING_IMG;
+            }
+            else {
+                firstSet = secondSet;
+                getPostCall();
+                frontImageView!.image = firstSet[viewCounter]!.img1;   //this changes it from the loading scene
+                backImageView!.image = firstSet[viewCounter]!.img2;
+            }
+        }
+        else {
+            frontImageView!.image = firstSet[viewCounter]!.img1;   //this changes it from the loading scene
+            backImageView!.image = firstSet[viewCounter]!.img2;
+        }
+
+        //...
+        frontLabel.setTitle("", forState: UIControlState.Normal);
+        backLabel.setTitle("", forState: UIControlState.Normal);
+        frontImageView.hidden = false;
+        backImageView.hidden = false;
+        showingImg = true;
+    }
+
     func performBufferLog() {
         NSLog("----------Logging---------")
         NSLog("VC: \(self.viewCounter) LoadedSetCount: \(self.loadedSet.count)");
@@ -173,6 +230,7 @@ class HomeFeedController: UIViewController, UITableViewDelegate, UITableViewData
         NSLog("----------End Log---------")
     }
     func animateImageMotion(towardPoint: CGPoint, vote: Bool) {
+        /*
         if (swiperNoSwipe) {
             //in middle of swiping - do nothing
             //later replace this with faster animation
@@ -315,11 +373,12 @@ class HomeFeedController: UIViewController, UITableViewDelegate, UITableViewData
                     }
                     self.swiperNoSwipe = false;
                 });
-        }
+        }*/
     }
     @IBAction func viewComments(sender: UIButton) {
         //initialize tableview with right arguments
-        //load latest 20 comments, load more if requested in cellForRowAtIndexPath        
+        /*
+        //load latest 20 comments, load more if requested in cellForRowAtIndexPath
         if (self.firstSet.count == 0 || (!self.firstSet[self.viewCounter])) {
             //there is no image for this post - no posts on feed
             //no post = no comments
@@ -340,11 +399,12 @@ class HomeFeedController: UIViewController, UITableViewDelegate, UITableViewData
                 self.commentList.append(PostComment(content: (input[index] as String)));
             }
             self.commentTableView.reloadData();
-        });
+        });*/
     }
     @IBAction func exitComments(sender: UIButton) {
-        commentView.hidden = true;
+        /*commentView.hidden = true;
         //animate this?
+        */
     }
 
     //--------------------TableView delegate methods-------------------------
@@ -381,8 +441,8 @@ class HomeFeedController: UIViewController, UITableViewDelegate, UITableViewData
             //set alert text field size bigger - this doesn't work, we need a UITextView
             alert.addAction(UIAlertAction(title: "Comment!", style: UIAlertActionStyle.Default, handler: {(action: UIAlertAction!) -> Void in
                 
-                var currentPost: ImagePostStructure = self.firstSet[self.viewCounter]!;
-                
+                var currentPost: PairPostStructure = self.firstSet[self.viewCounter]!;
+                /*
                 //textFields[0].text
                 currentPost.addComment((alert.textFields[0] as UITextField).text);
                 
@@ -392,7 +452,7 @@ class HomeFeedController: UIViewController, UITableViewDelegate, UITableViewData
                         self.commentList.append(PostComment(content: (input[index] as String)));
                     }
                     self.commentTableView.reloadData();
-                });
+                });*/
             }));
             alert.addAction(UIAlertAction(title: "Cancel", style: UIAlertActionStyle.Default, handler: {(action: UIAlertAction!) -> Void in
                 //canceled

@@ -19,7 +19,7 @@ import UIKit
         user.password = password;
         user.email = email;
         
-        user["friends"] = NSArray();
+        //user["friends"] = NSArray();
         user["viewHistory"] = NSArray();
         
         user.signUpInBackgroundWithBlock( {(succeeded: Bool, error: NSError!) in
@@ -27,7 +27,7 @@ import UIKit
             if (!error) {
                 //success!
                 //sees if user has pending items to process
-                ServerInteractor.initialUserChecks();
+                //ServerInteractor.initialUserChecks();
                 //user's first notification
                 ServerInteractor.postDefaultNotif("Welcome to InsertAppName! Thank you for signing up for our app!");
                 signController.successfulSignUp();
@@ -47,7 +47,7 @@ import UIKit
             var logController: LoginViewController = sender as LoginViewController;
             if (user) {
                 //successful log in
-                ServerInteractor.initialUserChecks();
+                //ServerInteractor.initialUserChecks();
                 logController.successfulLogin();
             }
             else {
@@ -64,7 +64,7 @@ import UIKit
         PFUser.currentUser().fetchInBackgroundWithBlock({(user: PFObject!, error: NSError!)->Void in
             var start: StartController = sender as StartController;
             if (!error) {
-                ServerInteractor.initialUserChecks();
+                //ServerInteractor.initialUserChecks();
                 start.approveUser();
             }
             else {
@@ -89,9 +89,8 @@ import UIKit
             } else if user.isNew {
                 //logController.failedLogin("User signed up and logged in through Facebook!")
                 NSLog("Setting up initial stuff for user");
-                user["friends"] = NSArray();
+                //user["friends"] = NSArray();
                 user["viewHistory"] = NSArray();
-                ServerInteractor.initialUserChecks();
                 //user's first notification
                 ServerInteractor.postDefaultNotif("Welcome to InsertAppName! Thank you for signing up for our app!");
                 user.saveEventually();
@@ -99,7 +98,6 @@ import UIKit
                 
             } else {
                 //logController.failedLogin("User logged in through Facebook!")
-                ServerInteractor.initialUserChecks();
                 logController.successfulLogin();
             }
         });
@@ -185,16 +183,18 @@ import UIKit
         return arr;
     }
     
-    class func uploadImage(image: UIImage, exclusivity: PostExclusivity, labels: String) {
+    class func uploadImage(image: UIImage, labels: String) {
         if (isAnonLogged()) {
             return;
         } else {
-            var newPost = ImagePostStructure(image: image, exclusivity: exclusivity, labels: labels);
+            var newPost = ImagePostStructure(image: image, labels: labels);
             var sender = PFUser.currentUser().username;     //in case user logs out while object is still saving
             /*newPost.myObj.saveInBackgroundWithBlock({(succeeded: Bool, error: NSError!)->Void in
                 NSLog("What");
                 });*/
             
+            var myLabels = newPost.myObj["labels"] as Array<String>;
+
             newPost.myObj.saveInBackgroundWithBlock({
                 (succeeded: Bool, error: NSError!)->Void in
                 if (succeeded && !error) {
@@ -211,7 +211,74 @@ import UIKit
                     notifObj["ImagePost"] = newPost.myObj;
                     
                     ServerInteractor.processNotification(sender, targetObject: notifObj);
-                    //ServerInteractor.saveNotification(PFUser.currentUser(), targetObject: notifObj)
+                    
+                    //query + make a few matches with this post
+                    
+                    /*var pred: NSPredicate = NSPredicate(block: {
+                        (evalObj: AnyObject!, bindings: [NSObject: AnyObject]!)->Bool in
+                        var theirLabels = (evalObj as PFObject)["labels"] as Array<String>;
+                        var count = 0;
+                        for lab: String in myLabels {
+                            if contains(theirLabels, lab) {
+                                count += 1;
+                                //must have 2 matches
+                                if (count >= 2) {
+                                    return true;
+                                }
+                            }
+                        }
+                        return false;
+                        });*/
+                    
+                    var matchQueries: [PFQuery] = [];
+                    var matchQuery: PFQuery;
+                    if (myLabels.count == 0) {
+                        matchQuery = PFQuery(className: "ImagePost");
+                        matchQuery.whereKey("labels", equalTo: []);
+                        matchQueries.append(matchQuery);
+                    }
+                    else if (myLabels.count < 2) {
+                        for lab: String in myLabels {
+                            matchQuery = PFQuery(className: "ImagePost");
+                            //matchQuery.whereKey("labels", containsAllObjectsInArray: []);
+                            //matchQuery.whereKey("labels", containedIn: );
+                            matchQuery.whereKey("labels", containsAllObjectsInArray: [lab]);
+                            matchQueries.append(matchQuery);
+                        }
+                    }
+                    else {
+                        for lab1: String in myLabels {
+                            for lab2: String in myLabels {
+                                if (lab1 != lab2) {
+                                    matchQuery = PFQuery(className: "ImagePost");
+                                    matchQuery.whereKey("labels", containsAllObjectsInArray: [lab1, lab2]);
+                                    matchQueries.append(matchQuery);
+                                }
+                            }
+                        }
+                    }
+                    var aMatchQuery = PFQuery.orQueryWithSubqueries(matchQueries);
+                    
+                    
+                    aMatchQuery.whereKey("objectId", notEqualTo: newPost.myObj.objectId)
+                    
+                    aMatchQuery.findObjectsInBackgroundWithBlock({
+                        (objects: [AnyObject]!, error: NSError!) -> Void in
+                        
+                        for (index, object: PFObject!) in enumerate(objects!) {
+                            var pairObj = PFObject(className:"Pair");
+                            //scramble order
+                            if (random() % 2 == 0) {
+                                pairObj["post1"] = newPost.myObj;
+                                pairObj["post2"] = objects[index];
+                            }
+                            else {
+                                pairObj["post2"] = newPost.myObj;
+                                pairObj["post1"] = objects[index];
+                            }
+                            pairObj.saveInBackground();
+                        }
+                    });
                 }
                 else {
                     NSLog("Soem error of some sort");
@@ -225,9 +292,9 @@ import UIKit
     }
     
     //helper function to convert an array of ImagePostStructures into an array of its objectID's
-    class func convertPostToID(input: Array<ImagePostStructure?>)->NSMutableArray {
+    class func convertPostToID(input: Array<PairPostStructure?>)->NSMutableArray {
         var output = NSMutableArray();
-        for post: ImagePostStructure? in input {
+        for post: PairPostStructure? in input {
             output.addObject(post!.myObj.objectId);
         }
         return output;
@@ -236,33 +303,18 @@ import UIKit
     //return ImagePostStructure(image, likes)
     //counter = how many pages I've seen (used for pagination)
     //this method DOES fetch the images along with the data
-    class func getPost(friendsOnly: Bool, finishFunction: (imgStruct: ImagePostStructure, index: Int)->Void, sender: HomeFeedController, excludes: Array<ImagePostStructure?>) {
+    class func getPost(finishFunction: (imgStruct: PairPostStructure, index: Int)->Void, sender: HomeFeedController, excludes: Array<PairPostStructure?>) {
         //download - relational data is NOT fetched!
-        var returnList = Array<ImagePostStructure?>();
+        var returnList = Array<PairPostStructure?>();
         //query
-        var query = PFQuery(className:"ImagePost")
+        var query = PFQuery(className:"Pair")
         //query.skip = skip * POST_LOAD_COUNT;
         query.limit = POST_LOAD_COUNT;
         query.orderByDescending("likes");
  
-        
         var excludeList = convertPostToID(excludes);
-        if (friendsOnly && !isAnonLogged()) {
-            query.whereKey("author", containedIn: (PFUser.currentUser()["friends"] as NSArray));
-            //query.whereKey("objectId", notContainedIn: excludeList);
-            //both friends + everyone marked feed from your friends show up here, as long as your friend posted
-            //query.whereKey("exclusive", equalTo: PostExclusivity.FRIENDS_ONLY.toRaw()); <--- leave this commented
-            if (!isAnonLogged()) {
-                excludeList.addObjectsFromArray((PFUser.currentUser()["viewHistory"] as NSArray))
-            }
-        }
-        else {
-            //must be an everyone-only post to show in popular feed
-            query.whereKey("exclusive", equalTo: PostExclusivity.EVERYONE.toRaw());
-            if (!isAnonLogged()) {
-                excludeList.addObjectsFromArray((PFUser.currentUser()["viewHistory"] as NSArray))
-            }
-            //query.whereKey("objectId", notContainedIn: excludeList);
+        if (!isAnonLogged()) {
+            excludeList.addObjectsFromArray((PFUser.currentUser()["viewHistory"] as NSArray))
         }
         query.whereKey("objectId", notContainedIn: excludeList);
         //query addAscending/DescendingOrder for extra ordering:
@@ -273,7 +325,7 @@ import UIKit
                 // Do something with the found objects
                 sender.setPostArraySize(objects.count);
                 for (index, object:PFObject!) in enumerate(objects!) {
-                    var post = ImagePostStructure(inputObj: object);
+                    var post = PairPostStructure(inputObj: object);
                     //self.readPost(post);
                     post.loadImage(finishFunction, index: index);
                 }
@@ -344,7 +396,7 @@ import UIKit
     }
 
     
-    class func readPost(post: ImagePostStructure) {
+    class func readPost(post: PairPostStructure) {
         var postID = post.myObj.objectId;
         PFUser.currentUser().addUniqueObject(postID, forKey: "viewHistory");
         PFUser.currentUser().saveEventually();
@@ -373,15 +425,6 @@ import UIKit
                 
                 targetObject.saveInBackground();
                 
-            }
-            else if (controller) {
-                if(objects.count == 0) {
-                    (controller! as FriendTableViewController).notifyFailure("No such user exists!");
-                }
-                else if (error) {
-                    //controller.makeNotificationThatFriendYouWantedDoesntExistAndThatYouAreVeryLonely
-                    (controller! as FriendTableViewController).notifyFailure(error.localizedDescription as String);
-                }
             }
         });
         return nil; //useless statement to suppress useless stupid xcode thing
@@ -454,171 +497,6 @@ import UIKit
         //notifObj.saveInBackground()
         
         ServerInteractor.processNotification(PFUser.currentUser().username, targetObject: notifObj);
-    }
-    //you have just requested someone as a friend; this sends the friend you are requesting a notification for friendship
-    class func postFriendRequest(friendName: String, controller: UIViewController) {
-        if (friendName == "") {
-            (controller as SettingsViewController).notifyFailure("Please fill in a name");
-            return;
-        }
-        
-        var notifObj = PFObject(className:"Notification");
-        notifObj["type"] = NotificationType.FRIEND_REQUEST.toRaw();
-        ServerInteractor.processNotification(friendName, targetObject: notifObj, controller: controller);
-        
-    }
-    //you have just accepted your friend's invite; your friend now gets informed that you are now his friend <3
-    //note: the func return type is to suppress some stupid thing that happens when u have objc stuff in your swift header
-    class func postFriendAccept(friendName: String)->Array<AnyObject?>? {
-        //first, query + find the user
-        var notifObj = PFObject(className:"Notification");
-        notifObj["type"] = NotificationType.FRIEND_ACCEPT.toRaw();
-        //notifObj.saveInBackground();
-        
-        ServerInteractor.processNotification(friendName, targetObject: notifObj);
-        return nil;
-    }
-    //call this method when either accepting a friend inv or receiving a confirmation notification
-    class func addAsFriend(friendName: String)->Array<NSObject?>? {
-        PFUser.currentUser().addUniqueObject(friendName, forKey: "friends");
-        PFUser.currentUser().saveEventually();
-        return nil;
-    }
-    //call this method when either removing a friend inv directly or when u receive 
-    //a (hidden) removefriend notif
-    //isHeartBroken: if false, must send (hidden) notif obj to user I am unfriending
-    //isHeartBroken: if true, is the user who has just been broken up with. no need to notify friend
-    //reason this is NOT a Notification PFObject: I should NOT notify the friend that I broke up with them
-    //  (stealthy friend removal) => i.e. if I want to remove a creeper I got deceived into friending
-    //RECEIVING END HAS BEEN IMPLEMENTED
-    class func removeFriend(friendName: String, isHeartBroken: Bool)->Array<NSObject?>? {
-        PFUser.currentUser().removeObject(friendName, forKey: "friends");
-        PFUser.currentUser().saveInBackground();
-        if (!isHeartBroken) {
-            //do NOT use processNotification - we don't want to post a notification
-            
-            
-            var query: PFQuery = PFUser.query();
-            query.whereKey("username", equalTo: friendName)
-            var currentUserName = PFUser.currentUser().username;
-            query.findObjectsInBackgroundWithBlock({ (objects: [AnyObject]!, error: NSError!) -> Void in
-                if (objects.count > 0) {
-                    var targetUser = objects[0] as PFUser;
-                    var breakupObj = PFObject(className:"BreakupNotice")
-                    breakupObj["sender"] = PFUser.currentUser().username;
-                    breakupObj["recipient"] = friendName;
-                    
-                    breakupObj.ACL.setReadAccess(true, forUser: targetUser)
-                    breakupObj.ACL.setWriteAccess(true, forUser: targetUser)
-                    
-                    breakupObj.saveInBackground();
-                    //send notification object
-                }
-            });
-        }
-        return nil;
-    }
-    
-    //not currently used, but might be helpful later on/nice to have a default version
-    class func getFriends()->Array<FriendEncapsulator?> {
-        return getFriends(FriendEncapsulator(friend: PFUser.currentUser()));
-    }
-    
-    //gets me a list of my friends!
-    //used by friend table loader
-    class func getFriends(user: FriendEncapsulator)->Array<FriendEncapsulator?> {
-        var unwrapUser = user.friendObj;
-        var returnList: Array<FriendEncapsulator?> = [];
-        var friendz: NSArray;
-        if (unwrapUser!.allKeys().bridgeToObjectiveC().containsObject("friends")) {
-            //if this runs, the code will break catastrophically, just initialize "friends" with registration
-            friendz = unwrapUser!["friends"] as NSArray;
-        }
-        else {
-            NSLog("Updating an old account to have friends");
-            friendz = Array<PFUser?>();
-            unwrapUser!["friends"] = NSArray()
-            unwrapUser!.saveInBackground();
-        }
-        var friend: String;
-        for index in 0..<friendz.count {
-            friend = friendz[index] as String;
-            returnList.append(FriendEncapsulator(friendName: friend));
-        }
-        return returnList;
-    }
-    
-    class func checkAcceptNotifs() {
-        //possibly move friend accepts here?
-        
-        //add method to clear user's viewed post history (for sake of less clutter)
-        //PFUser.currentUser()["viewHistory"] = NSArray();
-        //PFUser.currentUser().saveInBackground();
-        var queryForNotif = PFQuery(className: "Notification")
-        queryForNotif.whereKey("recipient", equalTo: PFUser.currentUser().username);
-        queryForNotif.orderByDescending("createdAt");
-        queryForNotif.findObjectsInBackgroundWithBlock({
-            (objects: [AnyObject]!, error: NSError!) -> Void in
-            if !error {
-                var object: PFObject;
-                for index: Int in 0..<objects.count {
-                    object = objects[index] as PFObject;
-                    if(!(object["viewed"] as Bool)) {
-                        if (object["type"]) {
-                            if ((object["type"] as String) == NotificationType.FRIEND_ACCEPT.toRaw()) {
-                                //accept the friend!
-                                ServerInteractor.addAsFriend(object["sender"] as String);
-                                //object["viewed"] = true;
-                            }
-                        }
-                        object.saveInBackground()
-                    }
-                }
-            }
-        });
-    }
-    //checks that user should do whenever starting to use app on account
-    class func initialUserChecks() {
-        //check and see if user has any notice for removal of friends
-        var query = PFQuery(className: "BreakupNotice");
-        query.whereKey("recipient", equalTo: PFUser.currentUser().username);
-        query.findObjectsInBackgroundWithBlock({ (objects: [AnyObject]!, error: NSError!) -> Void in 
-            NSLog("No explanation");
-            if (!error) {
-                var object: PFObject;
-                
-                if (objects.count == 0 ){
-                    ServerInteractor.checkAcceptNotifs();
-                    return;
-                }
-                
-                for index: Int in 0..<objects.count {
-                    var last = (index == objects.count - 1);
-                    object = objects[index] as PFObject;
-                    ServerInteractor.removeFriend(object["sender"] as String, isHeartBroken: true);
-                    
-                    
-                    var query = PFQuery(className: "Notification");
-                    query.whereKey("sender", equalTo: object["sender"] as String);
-                    query.whereKey("createdAt", lessThan: object.createdAt);
-                    //query.lessThan("createdAt", object["createdAt"]);
-                    query.findObjectsInBackgroundWithBlock({(objects: [AnyObject]!, error: NSError!) -> Void in
-                        for index: Int in 0..<objects.count {
-                            objects[index].deleteInBackgroundWithBlock({
-                                (succeeded: Bool, error: NSError!)->Void in
-                                    if (last) {
-                                        object.deleteInBackground();
-                                        ServerInteractor.checkAcceptNotifs();
-                                    }
-                                });
-                            }
-                    });
-                }
-            }
-            else {
-                NSLog("Error: Could not fetch");
-            }
-        });
     }
     //------------------Search methods---------------------------------------
     class func getSearchTerms(term: String, initFunc: (Int)->Void, receiveFunc: (Int, String)->Void, endFunc: ()->Void) {

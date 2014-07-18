@@ -8,6 +8,10 @@ var array = str.componentsSeparatedByCharactersInSet(NSCharacterSet(charactersIn
 array = array.filter({(obj: String)->Bool in obj != ""});
 array
 
+
+var x = random() % 2
+var y = random() % 2
+
 /*
 var str = "Hello, playground"
 "hello world"

@@ -52,7 +52,7 @@ class SettingsViewController: UIViewController, UICollectionViewDelegate, UIColl
                 userNameLabel.text = "Not logged in";
                 logOffButton.setTitle("Sign In", forState: UIControlState.Normal)
                 self.userIcon.image = DEFAULT_USER_ICON;
-                friendsButton.hidden = true;
+                //friendsButton.hidden = true;
             }
             else {
                 mainUser = ServerInteractor.getCurrentUser();
@@ -103,7 +103,7 @@ class SettingsViewController: UIViewController, UICollectionViewDelegate, UIColl
         if (segue && segue!.identifier != nil) {
             if (segue!.identifier == "SeeFriendsSegue") {
                 if (mainUser) {
-                    (segue!.destinationViewController as FriendTableViewController).receiveMasterFriend(mainUser!);
+                   // (segue!.destinationViewController as FriendTableViewController).receiveMasterFriend(mainUser!);
                 }
             }
             else if (segue!.identifier == "ImagePostSegue") {
